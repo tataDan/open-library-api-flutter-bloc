@@ -13,5 +13,9 @@ class PageBloc extends Bloc<PageEvent, PageState> {
     on<DecrementPageEvent>((event, emit) {
       emit(state.copyWith(page: state.page - 1));
     });
+
+    on<ResetToOnePageEvent>((event, emit) {
+      emit(state.copyWith(page: 1));
+    });
   }
 }

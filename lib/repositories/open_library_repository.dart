@@ -15,7 +15,6 @@ class OpenLibraryRepository {
     try {
       final OpenLibrary openLibrary = await openLibraryApiServices
           .getOpenLibraryResponse(searchValues, page);
-
       return openLibrary;
     } on OpenLibraryException catch (e) {
       throw CustomError(errMsg: e.message);

@@ -97,10 +97,9 @@ class _HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            direction: Axis.horizontal,
             alignment: WrapAlignment.start,
             children: [
-              const SizedBox(width: 10.0),
+              const SizedBox(width: 4.0),
               SizedBox(
                 width: 200.0,
                 child: TextField(
@@ -153,7 +152,6 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 20.0),
           Wrap(
-            direction: Axis.horizontal,
             alignment: WrapAlignment.start,
             children: [
               const SizedBox(width: 4.0),
@@ -169,7 +167,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(width: 20.0),
-              const SizedBox(width: 4),
               SizedBox(
                 width: 200.0,
                 child: TextField(
@@ -182,7 +179,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(width: 20.0),
-              const SizedBox(width: 4.0),
+              // const SizedBox(width: 4.0),
               SizedBox(
                 width: 200.0,
                 child: TextField(
@@ -195,7 +192,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(width: 20),
-              const SizedBox(width: 4),
               SizedBox(
                 width: 200.0,
                 child: TextField(
@@ -218,7 +214,6 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Wrap(
-        direction: Axis.horizontal,
         children: [
           ElevatedButton(
             onPressed: () {

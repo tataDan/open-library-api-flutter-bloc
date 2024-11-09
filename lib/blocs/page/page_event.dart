@@ -10,3 +10,5 @@ abstract class PageEvent extends Equatable {
 class IncrementPageEvent extends PageEvent {}
 
 class DecrementPageEvent extends PageEvent {}
+
+class ResetToOnePageEvent extends PageEvent {}

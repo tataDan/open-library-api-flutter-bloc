@@ -30,6 +30,13 @@ class _DocumentsPageState extends State<DocumentsPage> {
 
   Map<String, String>? _searchValues;
   int? _page;
+  int docCountBase = 1;
+  Map<int, int> pageCounts = {};
+  Map<int, int> pageCountsFiltered = {};
+  bool filtersApplied = false;
+  bool shouldCallServer = true;
+  int numFiltersChecked = 0;
+  bool shouldShowFilters = false;
 
   DocFilters docFilters = DocFilters(
       titleExact: false,
@@ -45,24 +52,31 @@ class _DocumentsPageState extends State<DocumentsPage> {
       placeSubstring: false,
       subjectSubstring: false);
 
-  bool filtersApplied = false;
-
   @override
   Widget build(BuildContext context) {
     final openLibraryBloc = context.read<OpenLibraryBloc>();
-
     List<Doc> docs = [];
 
     _searchValues = context.watch<SearchValuesBloc>().state.searchValues;
-
     _page = context.watch<PageBloc>().state.page;
-    openLibraryBloc
-        .add(FetchOpenLibraryEvent(searchValues: _searchValues!, page: _page!));
+
+    if (shouldCallServer) {
+      openLibraryBloc.add(
+          FetchOpenLibraryEvent(searchValues: _searchValues!, page: _page!));
+      shouldCallServer = false;
+    }
 
     return Scaffold(
       appBar: AppBar(
         title: const Center(
           child: Text('Open Library'),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            context.read<PageBloc>().add(ResetToOnePageEvent());
+            Navigator.pop(context, true);
+          },
         ),
       ),
       body: BlocConsumer<OpenLibraryBloc, OpenLibraryState>(
@@ -81,6 +95,9 @@ class _DocumentsPageState extends State<DocumentsPage> {
                     searchValues: _searchValues!,
                     docFilters: docFilters)
                 .filterDocs;
+            pageCountsFiltered[_page! - 1] = docs.length;
+          } else {
+            pageCounts[_page! - 1] = docs.length;
           }
 
           if (state.status == OpenLibraryStatus.loading) {
@@ -100,23 +117,25 @@ class _DocumentsPageState extends State<DocumentsPage> {
 
           return Padding(
             padding: const EdgeInsets.all(20.0),
-            child: ListView(
-              primary: true,
-              scrollDirection: Axis.vertical,
+            child: Column(
               children: [
-                showOptionsRow(),
-                showPageRow(numFound, context),
+                if (!shouldShowFilters) showOptionsRow(),
+                if (!shouldShowFilters) showPageRow(numFound, context),
                 const SizedBox(height: 10.0),
-                showSearchFilters(),
-                const Divider(),
-                ListView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.only(top: 10),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    return showDoc(index, docs);
-                  },
-                ),
+                if (shouldShowFilters) showFilters(),
+                if (!shouldShowFilters) const Divider(),
+                if (!shouldShowFilters)
+                  Expanded(
+                    child: ListView.builder(
+                      primary: true,
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.only(top: 10),
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        return showDoc(index, docs);
+                      },
+                    ),
+                  ),
               ],
             ),
           );
@@ -129,7 +148,6 @@ class _DocumentsPageState extends State<DocumentsPage> {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Wrap(
-        direction: Axis.horizontal,
         children: [
           const Text(
             'Show Options:',
@@ -230,20 +248,34 @@ class _DocumentsPageState extends State<DocumentsPage> {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Wrap(
-        direction: Axis.horizontal,
         alignment: WrapAlignment.start,
         children: [
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                shouldShowFilters = true;
+              });
+            },
+            child: const Text('Show filters'),
+          ),
+          const SizedBox(width: 20.0),
           Text(
             'Page: $_page',
             style: const TextStyle(fontSize: 18),
           ),
           const SizedBox(width: 10.0),
           ElevatedButton(
-            onPressed: _page! > (numFound / docsPerPage)
+            onPressed: _page! >= (numFound / docsPerPage)
                 ? null
                 : () {
                     BlocProvider.of<PageBloc>(context)
                         .add(IncrementPageEvent());
+                    if (filtersApplied) {
+                      docCountBase += pageCountsFiltered[_page! - 1]!;
+                    } else {
+                      docCountBase += pageCounts[_page! - 1]!;
+                    }
+                    shouldCallServer = true;
                   },
             child: const Text('Next Page'),
           ),
@@ -254,35 +286,46 @@ class _DocumentsPageState extends State<DocumentsPage> {
                 : () {
                     BlocProvider.of<PageBloc>(context)
                         .add(DecrementPageEvent());
+                    if (filtersApplied) {
+                      docCountBase -= pageCountsFiltered[_page! - 2]!;
+                    } else {
+                      docCountBase -= pageCounts[_page! - 2]!;
+                    }
+                    shouldCallServer = true;
                   },
             child: const Text('Previous Page'),
+          ),
+          const SizedBox(width: 20.0),
+          ElevatedButton(
+            onPressed: () {
+              BlocProvider.of<PageBloc>(context).add(ResetToOnePageEvent());
+              docCountBase = 1;
+              shouldCallServer = true;
+            },
+            child: const Text('Go to first page'),
           ),
           const SizedBox(width: 20.0),
           Text(
             'Unfiltered documents: ${numFound.toString()}',
             style: const TextStyle(fontSize: 16),
           ),
-          const SizedBox(width: 200.0),
-          const Text(
-            'Apply Filters',
-            style: TextStyle(fontSize: 16),
-          ),
-          const SizedBox(width: 10.0),
-          Switch(
-            value: filtersApplied,
-            activeColor: Colors.red,
-            onChanged: (bool value) {
-              setState(() {
-                filtersApplied = value;
-              });
-            },
-          ),
         ],
       ),
     );
   }
 
-  Padding showSearchFilters() {
+  void computerNumFiltersChecked(bool value) {
+    if (value) {
+      numFiltersChecked++;
+    } else {
+      numFiltersChecked--;
+    }
+    if (numFiltersChecked > 0) {
+      filtersApplied = true;
+    }
+  }
+
+  Padding showFilters() {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Column(
@@ -290,7 +333,6 @@ class _DocumentsPageState extends State<DocumentsPage> {
         children: [
           const SizedBox(width: 10.0),
           Wrap(
-            direction: Axis.horizontal,
             children: [
               const Text(
                 'Filters:',
@@ -302,26 +344,36 @@ class _DocumentsPageState extends State<DocumentsPage> {
                 decoration: BoxDecoration(border: Border.all()),
                 child: Wrap(
                   children: [
-                    const Text('Title Exact'),
+                    const Text('Title:  Exact'),
                     Checkbox(
                       value: docFilters.titleExact,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.titleExact = value!;
-                          docFilters.titleSubstring = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(
+                                () {
+                                  docFilters.titleExact = value!;
+                                  docFilters.titleSubstring = false;
+                                  computerNumFiltersChecked(value);
+                                },
+                              );
+                            }
+                          : null,
                     ),
                     const SizedBox(width: 12),
-                    const Text('Title Substring'),
+                    const Text('Substring'),
                     Checkbox(
                       value: docFilters.titleSubstring,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.titleSubstring = value!;
-                          docFilters.titleExact = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(
+                                () {
+                                  docFilters.titleSubstring = value!;
+                                  docFilters.titleExact = false;
+                                  computerNumFiltersChecked(value);
+                                },
+                              );
+                            }
+                          : null,
                     ),
                   ],
                 ),
@@ -332,26 +384,32 @@ class _DocumentsPageState extends State<DocumentsPage> {
                 decoration: BoxDecoration(border: Border.all()),
                 child: Wrap(
                   children: [
-                    const Text('Author Exact'),
+                    const Text('Author:  Exact'),
                     Checkbox(
                       value: docFilters.authorExact,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.authorExact = value!;
-                          docFilters.authorSubstring = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.authorExact = value!;
+                                docFilters.authorSubstring = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                     const SizedBox(width: 12),
-                    const Text('Author Substring'),
+                    const Text('Substring'),
                     Checkbox(
                       value: docFilters.authorSubstring,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.authorSubstring = value!;
-                          docFilters.authorExact = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.authorSubstring = value!;
+                                docFilters.authorExact = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                   ],
                 ),
@@ -362,26 +420,32 @@ class _DocumentsPageState extends State<DocumentsPage> {
                 decoration: BoxDecoration(border: Border.all()),
                 child: Wrap(
                   children: [
-                    const Text('Publisher Exact'),
+                    const Text('Publisher:  Exact'),
                     Checkbox(
                       value: docFilters.publisherExact,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.publisherExact = value!;
-                          docFilters.publisherSubstring = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.publisherExact = value!;
+                                docFilters.publisherSubstring = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                     const SizedBox(width: 12),
-                    const Text('Publisher Substring'),
+                    const Text('Substring'),
                     Checkbox(
                       value: docFilters.publisherSubstring,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.publisherSubstring = value!;
-                          docFilters.publisherExact = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.publisherSubstring = value!;
+                                docFilters.publisherExact = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                   ],
                 ),
@@ -391,35 +455,39 @@ class _DocumentsPageState extends State<DocumentsPage> {
           ),
           const SizedBox(height: 10.0),
           Wrap(
-            direction: Axis.horizontal,
             children: [
               const SizedBox(width: 60),
               Container(
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(border: Border.all()),
                 child: Wrap(
-                  direction: Axis.horizontal,
                   children: [
-                    const Text('Person Exact'),
+                    const Text('Person:  Exact'),
                     Checkbox(
                       value: docFilters.personExact,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.personExact = value!;
-                          docFilters.personSubstring = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.personExact = value!;
+                                docFilters.personSubstring = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                     const SizedBox(width: 15),
-                    const Text('Person Substring'),
+                    const Text('Substring'),
                     Checkbox(
                       value: docFilters.personSubstring,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.personSubstring = value!;
-                          docFilters.personExact = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.personSubstring = value!;
+                                docFilters.personExact = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                   ],
                 ),
@@ -430,26 +498,32 @@ class _DocumentsPageState extends State<DocumentsPage> {
                 decoration: BoxDecoration(border: Border.all()),
                 child: Wrap(
                   children: [
-                    const Text('Place Exact'),
+                    const Text('Place:  Exact'),
                     Checkbox(
                       value: docFilters.placeExact,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.placeExact = value!;
-                          docFilters.placeSubstring = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.placeExact = value!;
+                                docFilters.placeSubstring = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                     const SizedBox(width: 12),
-                    const Text('Place Substring'),
+                    const Text('Substring'),
                     Checkbox(
                       value: docFilters.placeSubstring,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.placeSubstring = value!;
-                          docFilters.placeExact = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.placeSubstring = value!;
+                                docFilters.placeExact = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                   ],
                 ),
@@ -458,34 +532,48 @@ class _DocumentsPageState extends State<DocumentsPage> {
               Container(
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(border: Border.all()),
-                // child: Row(
                 child: Wrap(
                   children: [
-                    const Text('Subject Exact'),
+                    const Text('Subject:  Exact'),
                     Checkbox(
                       value: docFilters.subjectExact,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.subjectExact = value!;
-                          docFilters.subjectSubstring = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.subjectExact = value!;
+                                docFilters.subjectSubstring = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                     const SizedBox(width: 12),
-                    const Text('Subject Substring'),
+                    const Text('Substring'),
                     Checkbox(
                       value: docFilters.subjectSubstring,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          docFilters.subjectSubstring = value!;
-                          docFilters.subjectExact = false;
-                        });
-                      },
+                      onChanged: _page == 1
+                          ? (bool? value) {
+                              setState(() {
+                                docFilters.subjectSubstring = value!;
+                                docFilters.subjectExact = false;
+                                computerNumFiltersChecked(value);
+                              });
+                            }
+                          : null,
                     ),
                   ],
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10.0),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                shouldShowFilters = false;
+              });
+            },
+            child: const Text('Return to documents screen'),
           ),
         ],
       ),
@@ -508,7 +596,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
               ? const SizedBox(height: 0.0)
               : const SizedBox(height: 8.0),
           Text(
-            'Document #${index + 1}',
+            'Document #${index + docCountBase}',
             style: const TextStyle(fontSize: 20),
           ),
           const SizedBox(height: 2.0),
@@ -528,7 +616,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   : const Text(''),
             ],
           ),
-          if (docs[index].authorName != null && showOptions.showAuthor) ...[
+          if (docs[index].authorName != null && showOptions.showAuthor)
             for (var author in docs[index].authorName!)
               Row(
                 children: [
@@ -537,10 +625,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(author)),
                 ],
               ),
-          ] else ...[
-            const Text('Authors:')
-          ],
-          if (docs[index].publisher != null && showOptions.showPublisher) ...[
+          if (docs[index].publisher != null && showOptions.showPublisher)
             for (var publisher in docs[index].publisher!)
               Row(
                 children: [
@@ -549,10 +634,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(publisher)),
                 ],
               ),
-          ] else ...[
-            const Text('Publishers:')
-          ],
-          if (docs[index].person != null && showOptions.showPerson) ...[
+          if (docs[index].person != null && showOptions.showPerson)
             for (var person in docs[index].person!)
               Row(
                 children: [
@@ -561,10 +643,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(person)),
                 ],
               ),
-          ] else ...[
-            const Text('Persons:'),
-          ],
-          if (docs[index].place != null && showOptions.showPlace) ...[
+          if (docs[index].place != null && showOptions.showPlace)
             for (var place in docs[index].place!)
               Row(
                 children: [
@@ -573,10 +652,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(place)),
                 ],
               ),
-          ] else ...[
-            const Text('Places:'),
-          ],
-          if (docs[index].subject != null && showOptions.showSubject) ...[
+          if (docs[index].subject != null && showOptions.showSubject)
             for (var subject in docs[index].subject!)
               Row(
                 children: [
@@ -585,10 +661,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(subject)),
                 ],
               ),
-          ] else ...[
-            const Text('Subjects:'),
-          ],
-          if (docs[index].isbn != null && showOptions.showIsbn) ...[
+          if (docs[index].isbn != null && showOptions.showIsbn)
             for (var isbn in docs[index].isbn!)
               Row(
                 children: [
@@ -597,10 +670,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(isbn)),
                 ],
               ),
-          ] else ...[
-            const Text('ISBNs:'),
-          ],
-          if (docs[index].language != null && showOptions.showLanguage) ...[
+          if (docs[index].language != null && showOptions.showLanguage)
             for (var language in docs[index].language!)
               Row(
                 children: [
@@ -609,9 +679,6 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   Expanded(child: Text(language)),
                 ],
               ),
-          ] else ...[
-            const Text('Languages:'),
-          ],
           Row(
             children: [
               const Text('Key:'),
